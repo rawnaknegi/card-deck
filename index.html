@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Draw a Card</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --felt:#1f5c43; --felt-dark:#154432; --card:#fbf8f1; --ink:#1c1c1c; --red:#c0272d; --gold:#f2c14e; --text:#f3efe4;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --felt:#173f2f; --felt-dark:#0f2b20; --card:#f4f0e6; }
+}
+:root[data-theme="dark"]{ --felt:#173f2f; --felt-dark:#0f2b20; --card:#f4f0e6; }
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:radial-gradient(circle at 50% 35%,var(--felt),var(--felt-dark));
+  color:var(--text);
+  font-family:Georgia,"Times New Roman",serif;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;
+  padding:1rem;text-align:center;
+}
+h1{font-size:clamp(1.6rem,5vw,2.4rem);margin:0;font-weight:700;letter-spacing:.02em}
+.count{font-size:1.1rem;opacity:.85}
+.stage{height:min(44vh,340px);display:flex;align-items:center;justify-content:center;perspective:900px}
+.card{
+  height:100%;aspect-ratio:5/7;background:var(--card);color:var(--ink);border-radius:14px;
+  box-shadow:0 14px 30px rgba(0,0,0,.45);position:relative;display:flex;align-items:center;justify-content:center;
+}
+.card.red{color:var(--red)}
+.card.flip{animation:flip .45s ease-out}
+@keyframes flip{from{transform:rotateY(90deg) scale(.9)}to{transform:rotateY(0) scale(1)}}
+@media (prefers-reduced-motion:reduce){.card.flip{animation:none}}
+.corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:1;font-weight:700}
+.corner .r{font-size:clamp(1.4rem,5vh,2.2rem)}
+.corner .s{font-size:clamp(1.1rem,4vh,1.8rem)}
+.tl{top:10px;left:12px}
+.br{bottom:10px;right:12px;transform:rotate(180deg)}
+.big{font-size:clamp(4rem,18vh,8rem)}
+.back{
+  background:repeating-linear-gradient(45deg,#7a1f2b 0 8px,#5e1520 8px 16px);
+  border:10px solid var(--card);
+}
+.back span{font-size:3rem;color:var(--card);opacity:.8}
+.rest{min-height:2rem;font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums}
+.skip{font-size:.95rem;padding:.4rem 1.1rem;background:transparent;color:var(--text);border:2px solid var(--text);box-shadow:none}
+.skip:active{transform:none;box-shadow:none}
+button:disabled{opacity:.55;cursor:not-allowed}
+.restart{font-size:.95rem;padding:.4rem 1.1rem;background:#c0272d;color:#fff;box-shadow:none}
+.restart:active{transform:none;box-shadow:none}
+.total{font-size:1.2rem;font-weight:700}
+#confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:100}
+.reps{min-height:2.2rem;font-size:clamp(1.4rem,5vw,2rem);font-weight:700;color:var(--gold)}
+button{
+  font:inherit;font-size:1.15rem;font-weight:700;padding:.85rem 2rem;border-radius:999px;border:0;cursor:pointer;
+  background:var(--gold);color:#2a2100;box-shadow:0 4px 0 #b78f26;
+}
+button:active{transform:translateY(3px);box-shadow:0 1px 0 #b78f26}
+button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.history{max-width:640px;display:flex;flex-wrap:wrap;gap:.35rem;justify-content:center;min-height:1.8rem}
+.chip{background:var(--card);color:var(--ink);padding:.15rem .45rem;border-radius:6px;font-size:.95rem;font-weight:700}
+.chip.red{color:var(--red)}
+.win{display:none;flex-direction:column;align-items:center;gap:1rem}
+.win h2{font-size:clamp(2rem,7vw,3.2rem);margin:0;color:var(--gold)}
+.win p{margin:0;font-size:1.15rem}
+body.done .draw-ui{display:none!important}
+body.done .win{display:flex}
+</style>
+</head>
+<body>
+<h1>Draw a card</h1>
+
+<div class="draw-ui" style="display:flex;flex-direction:column;align-items:center;gap:1.5rem">
+  <div class="count" id="count" aria-live="polite">52 cards left</div>
+  <div class="total" id="total">Total pushups: 0</div>
+  <div class="stage"><div class="card back" id="card"><span>♠</span></div></div>
+  <div class="reps" id="reps" aria-live="polite"></div>
+  <div class="rest" id="rest"></div>
+  <button class="skip" id="skip" hidden>Skip rest</button>
+  <button id="btn">Draw a card</button>
+  <div class="history" id="history" aria-label="Cards drawn so far"></div>
+  <button class="restart" id="restart">Emergency restart</button>
+</div>
+
+<div class="win" role="status">
+  <h2>Congratulations!</h2>
+  <p>You drew all 52 cards.</p>
+  <p>Total pushups: <strong id="finalTotal">0</strong></p>
+  <button id="again">Shuffle and play again</button>
+</div>
+
+<canvas id="confetti"></canvas>
+<script>
+const suits=[{s:"♠",red:false},{s:"♥",red:true},{s:"♦",red:true},{s:"♣",red:false}];
+const ranks=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+let deck=[];
+let restTimer=null;
+let total=0;
+const $=id=>document.getElementById(id);
+
+function newDeck(){
+  deck=[];
+  for(const su of suits) for(const r of ranks) deck.push({r,s:su.s,red:su.red});
+}
+function reset(){
+  newDeck();
+  document.body.classList.remove("done");
+  $("count").textContent="52 cards left";
+  $("history").innerHTML="";
+  $("reps").textContent="";
+  total=0;
+  stopRest();
+  $("total").textContent="Total pushups: 0";
+  const c=$("card");
+  c.className="card back";
+  c.innerHTML="<span>♠</span>";
+  $("btn").textContent="Draw a card";
+}
+function draw(){
+  if(!deck.length) return;
+  const i=Math.floor(Math.random()*deck.length);
+  const [card]=deck.splice(i,1);
+  const c=$("card");
+  c.className="card flip"+(card.red?" red":"");
+  c.innerHTML=
+    `<div class="corner tl"><span class="r">${card.r}</span><span class="s">${card.s}</span></div>`+
+    `<div class="big">${card.s}</div>`+
+    `<div class="corner br"><span class="r">${card.r}</span><span class="s">${card.s}</span></div>`;
+  const chip=document.createElement("span");
+  chip.className="chip"+(card.red?" red":"");
+  chip.textContent=card.r+card.s;
+  $("history").appendChild(chip);
+  const faceReps={A:12,J:15,Q:18,K:20};
+  const reps=faceReps[card.r]||Number(card.r);
+  $("reps").textContent=reps+" pushups!";
+  total+=reps;
+  $("total").textContent="Total pushups: "+total;
+  const n=deck.length;
+  $("count").textContent=n+(n===1?" card left":" cards left");
+  if(n===0){
+    $("btn").disabled=true;
+    setTimeout(()=>{ $("btn").disabled=false; document.body.classList.add("done"); $("finalTotal").textContent=total; $("again").focus(); confetti(); },1400);
+  } else { startRest(reps*2); }
+}
+function fmt(s){return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
+function stopRest(){
+  clearInterval(restTimer); restTimer=null;
+  $("rest").textContent="";
+  $("skip").hidden=true;
+  $("btn").disabled=false;
+  $("btn").textContent="Draw a card";
+}
+function startRest(sec){
+  let left=sec;
+  $("btn").disabled=true;
+  $("btn").textContent="Resting…";
+  $("skip").hidden=false;
+  $("rest").textContent="Rest "+fmt(left);
+  restTimer=setInterval(()=>{
+    left--;
+    if(left<=0){ stopRest(); }
+    else { $("rest").textContent="Rest "+fmt(left); }
+  },1000);
+}
+function confetti(){
+  const cv=$("confetti"),ctx=cv.getContext("2d");
+  const dpr=window.devicePixelRatio||1;
+  cv.width=innerWidth*dpr; cv.height=innerHeight*dpr;
+  const colors=["#f2c14e","#c0272d","#fbf8f1","#4cc9a0","#5aa9ff","#ff8fab"];
+  const ps=Array.from({length:220},()=>({
+    x:Math.random()*cv.width, y:-Math.random()*cv.height*0.6,
+    w:(6+Math.random()*6)*dpr, h:(10+Math.random()*8)*dpr,
+    vy:(2+Math.random()*4)*dpr, vx:(Math.random()-.5)*3*dpr,
+    rot:Math.random()*6.28, vr:(Math.random()-.5)*.3,
+    c:colors[Math.floor(Math.random()*colors.length)]
+  }));
+  let frames=0;
+  (function step(){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    for(const p of ps){
+      p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+      ctx.fillStyle=p.c; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+      ctx.restore();
+    }
+    frames++;
+    if(frames<480 && ps.some(p=>p.y<cv.height+40*dpr)) requestAnimationFrame(step);
+    else ctx.clearRect(0,0,cv.width,cv.height);
+  })();
+}
+$("btn").addEventListener("click",draw);
+$("skip").addEventListener("click",stopRest);
+let armTimer=null;
+function disarmRestart(){
+  clearTimeout(armTimer); armTimer=null;
+  const b=$("restart");
+  delete b.dataset.armed;
+  b.textContent="Emergency restart";
+}
+$("restart").addEventListener("click",()=>{
+  const b=$("restart");
+  if(!b.dataset.armed){
+    b.dataset.armed="1";
+    b.textContent="Tap again to confirm";
+    armTimer=setTimeout(disarmRestart,3000);
+  } else {
+    disarmRestart();
+    reset();
+  }
+});
+$("again").addEventListener("click",reset);
+reset();
+</script>
+</body>
+</html>
