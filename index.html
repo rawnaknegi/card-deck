@@ -52,6 +52,7 @@ h1{font-size:clamp(1.6rem,5vw,2.4rem);margin:0;font-weight:700;letter-spacing:.0
 button:disabled{opacity:.55;cursor:not-allowed}
 .restart{font-size:.95rem;padding:.4rem 1.1rem;background:#c0272d;color:#fff;box-shadow:none}
 .restart:active{transform:none;box-shadow:none}
+#elapsed{font-variant-numeric:tabular-nums}
 .total{font-size:1.2rem;font-weight:700}
 #confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:100}
 .reps{min-height:2.2rem;font-size:clamp(1.4rem,5vw,2rem);font-weight:700;color:var(--gold)}
@@ -77,6 +78,7 @@ body.done .win{display:flex}
 <div class="draw-ui" style="display:flex;flex-direction:column;align-items:center;gap:1.5rem">
   <div class="count" id="count" aria-live="polite">52 cards left</div>
   <div class="total" id="total">Total pushups: 0</div>
+  <div class="total" id="elapsed">Time: 0:00</div>
   <div class="stage"><div class="card back" id="card"><span>♠</span></div></div>
   <div class="reps" id="reps" aria-live="polite"></div>
   <div class="rest" id="rest"></div>
@@ -90,6 +92,7 @@ body.done .win{display:flex}
   <h2>Congratulations!</h2>
   <p>You drew all 52 cards.</p>
   <p>Total pushups: <strong id="finalTotal">0</strong></p>
+  <p>Total time: <strong id="finalTime">0:00</strong></p>
   <button id="again">Shuffle and play again</button>
 </div>
 
@@ -99,6 +102,9 @@ const suits=[{s:"♠",red:false},{s:"♥",red:true},{s:"♦",red:true},{s:"♣",
 const ranks=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 let deck=[];
 let restTimer=null;
+let lastReps=0;
+let startTime=0;
+let clockTimer=null;
 let total=0;
 const $=id=>document.getElementById(id);
 
@@ -113,6 +119,9 @@ function reset(){
   $("history").innerHTML="";
   $("reps").textContent="";
   total=0;
+  lastReps=0;
+  stopClock(); startTime=0;
+  $("elapsed").textContent="Time: 0:00";
   stopRest();
   $("total").textContent="Total pushups: 0";
   const c=$("card");
@@ -122,6 +131,7 @@ function reset(){
 }
 function draw(){
   if(!deck.length) return;
+  startClock();
   const i=Math.floor(Math.random()*deck.length);
   const [card]=deck.splice(i,1);
   const c=$("card");
@@ -141,12 +151,38 @@ function draw(){
   $("total").textContent="Total pushups: "+total;
   const n=deck.length;
   $("count").textContent=n+(n===1?" card left":" cards left");
-  if(n===0){
-    $("btn").disabled=true;
-    setTimeout(()=>{ $("btn").disabled=false; document.body.classList.add("done"); $("finalTotal").textContent=total; $("again").focus(); confetti(); },1400);
-  } else { startRest(reps*2); }
+  lastReps=reps;
+  if(n===0) $("btn").textContent="Finish";
+}
+function finish(){
+  document.body.classList.add("done"); $("finalTotal").textContent=total; $("finalTime").textContent=fmtT(stopClock()); $("again").focus(); confetti();
+}
+function onMain(){
+  if(restTimer) return;
+  if(lastReps===0) draw();
+  else if(deck.length===0) finish();
+  else startRest(lastReps*2);
 }
 function fmt(s){return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
+function fmtT(s){
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  const ss=String(sec).padStart(2,"0");
+  return h>0 ? h+":"+String(m).padStart(2,"0")+":"+ss : m+":"+ss;
+}
+function tick(){
+  $("elapsed").textContent="Time: "+fmtT(Math.floor((Date.now()-startTime)/1000));
+}
+function startClock(){
+  if(clockTimer) return;
+  startTime=Date.now();
+  clockTimer=setInterval(tick,250);
+  tick();
+}
+function stopClock(){
+  const secs=startTime ? Math.floor((Date.now()-startTime)/1000) : 0;
+  clearInterval(clockTimer); clockTimer=null;
+  return secs;
+}
 function stopRest(){
   clearInterval(restTimer); restTimer=null;
   $("rest").textContent="";
@@ -162,7 +198,7 @@ function startRest(sec){
   $("rest").textContent="Rest "+fmt(left);
   restTimer=setInterval(()=>{
     left--;
-    if(left<=0){ stopRest(); }
+    if(left<=0){ stopRest(); draw(); }
     else { $("rest").textContent="Rest "+fmt(left); }
   },1000);
 }
@@ -192,8 +228,8 @@ function confetti(){
     else ctx.clearRect(0,0,cv.width,cv.height);
   })();
 }
-$("btn").addEventListener("click",draw);
-$("skip").addEventListener("click",stopRest);
+$("btn").addEventListener("click",onMain);
+$("skip").addEventListener("click",()=>{ if(restTimer){ stopRest(); draw(); } });
 let armTimer=null;
 function disarmRestart(){
   clearTimeout(armTimer); armTimer=null;
